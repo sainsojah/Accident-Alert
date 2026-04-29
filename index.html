@@ -1,542 +1,636 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>AccidentAlert Dashboard | Live Map</title>
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!-- Firebase SDKs (Compat version for Realtime DB) -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-        }
-        body {
-            height: 100vh;
-            width: 100vw;
-            overflow: hidden;
-        }
-        .dashboard {
-            display: flex;
-            height: 100%;
-            width: 100%;
-        }
-        /* Map takes 75% */
-        .map-wrapper {
-            flex: 3;
-            position: relative;
-            background: #e9ecef;
-        }
-        #map {
-            height: 100%;
-            width: 100%;
-        }
-        /* Sidebar 25% */
-        .sidebar {
-            flex: 1;
-            background: #f8f9fa;
-            display: flex;
-            flex-direction: column;
-            border-left: 2px solid #dee2e6;
-            overflow-y: auto;
-            box-shadow: -2px 0 10px rgba(0,0,0,0.05);
-        }
-        /* Header status */
-        .status-bar {
-            padding: 15px;
-            background: white;
-            border-bottom: 1px solid #e9ecef;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .live-badge {
-            background: #e74c3c;
-            color: white;
-            padding: 4px 12px;
-            border-radius: 30px;
-            font-size: 0.7rem;
-            font-weight: bold;
-            letter-spacing: 1px;
-        }
-        .connection {
-            font-size: 0.75rem;
-            color: #2c3e50;
-            background: #e9ecef;
-            padding: 4px 10px;
-            border-radius: 20px;
-        }
-        /* Alert feed */
-        .alert-feed {
-            padding: 15px;
-            border-bottom: 1px solid #e9ecef;
-            flex: 1;
-            overflow-y: auto;
-        }
-        .alert-feed h3 {
-            font-size: 1rem;
-            margin-bottom: 12px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .alert-list {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .alert-item {
-            background: white;
-            border-radius: 12px;
-            padding: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            border-left: 5px solid;
-            cursor: pointer;
-            transition: 0.2s;
-        }
-        .alert-item.critical { border-left-color: #e74c3c; }
-        .alert-item.moderate { border-left-color: #f39c12; }
-        .alert-item.minor   { border-left-color: #2ecc71; }
-        .alert-item.selected {
-            background: #e3f2fd;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        .alert-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 6px;
-            font-weight: bold;
-        }
-        .severity-badge {
-            font-size: 0.7rem;
-            padding: 2px 8px;
-            border-radius: 20px;
-            color: white;
-        }
-        .severity-critical { background: #e74c3c; }
-        .severity-moderate { background: #f39c12; }
-        .severity-minor    { background: #2ecc71; }
-        .alert-coords {
-            font-family: monospace;
-            font-size: 0.75rem;
-            color: #6c757d;
-            margin: 5px 0;
-        }
-        .alert-check {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.75rem;
-            margin-top: 8px;
-        }
-        .timestamp {
-            font-size: 0.65rem;
-            color: #adb5bd;
-        }
-        /* Selected details panel */
-        .selected-detail {
-            background: white;
-            margin: 10px 15px;
-            padding: 12px;
-            border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        .selected-detail h4 {
-            margin-bottom: 8px;
-            font-size: 0.9rem;
-        }
-        .detail-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            font-size: 0.75rem;
-            margin: 10px 0;
-        }
-        .btn-focus {
-            background: #3498db;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 0.7rem;
-            width: 100%;
-        }
-        /* GPS coordinate box */
-        .coord-box {
-            background: white;
-            margin: 10px 15px;
-            padding: 12px;
-            border-radius: 12px;
-            border-top: 1px solid #e9ecef;
-        }
-        .coord-input-group {
-            display: flex;
-            gap: 8px;
-            margin-top: 8px;
-        }
-        #coordInput {
-            flex: 2;
-            padding: 8px;
-            border: 1px solid #ced4da;
-            border-radius: 30px;
-            font-size: 0.75rem;
-        }
-        .coord-link {
-            background: #6c757d;
-            color: white;
-            padding: 6px 14px;
-            border-radius: 30px;
-            text-decoration: none;
-            font-size: 0.75rem;
-            cursor: pointer;
-        }
-        .test-btn {
-            background: #28a745;
-            color: white;
-            text-align: center;
-            padding: 8px;
-            border-radius: 30px;
-            margin-top: 10px;
-            cursor: pointer;
-            font-size: 0.75rem;
-            font-weight: bold;
-        }
-        .totals {
-            background: #e9ecef;
-            border-radius: 12px;
-            padding: 8px 12px;
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.7rem;
-            margin: 10px 15px;
-        }
-        .osm-credit {
-            font-size: 0.6rem;
-            text-align: center;
-            color: #6c757d;
-            margin: 10px;
-        }
-        #toastMsg {
-            position: fixed;
-            bottom: 20px;
-            left: 20px;
-            background: #2c3e50;
-            color: white;
-            padding: 6px 14px;
-            border-radius: 30px;
-            font-size: 0.8rem;
-            z-index: 2000;
-            opacity: 0.9;
-        }
-        @media (max-width: 700px) {
-            .dashboard { flex-direction: column; }
-            .map-wrapper { flex: auto; height: 55%; }
-            .sidebar { flex: auto; height: 45%; }
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>AccidentAlert — Live Dashboard</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<!-- Firebase SDKs — swap placeholders with your real config -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<style>
+/* ── Reset & tokens ── */
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:        #0d0f14;
+  --surface:   #13161e;
+  --surface2:  #1a1e29;
+  --surface3:  #20263a;
+  --border:    rgba(255,255,255,0.07);
+  --border2:   rgba(255,255,255,0.12);
+  --text:      #e8eaf2;
+  --muted:     #6b7280;
+  --accent:    #3b7fef;
+  --critical:  #ef4444;
+  --moderate:  #f59e0b;
+  --minor:     #10b981;
+  --critical-dim: rgba(239,68,68,0.12);
+  --moderate-dim: rgba(245,158,11,0.12);
+  --minor-dim:    rgba(16,185,129,0.12);
+  --font-ui:   'DM Sans', sans-serif;
+  --font-mono: 'Space Mono', monospace;
+  --radius:    10px;
+  --radius-lg: 16px;
+}
+body{
+  font-family:var(--font-ui);
+  background:var(--bg);
+  color:var(--text);
+  height:100vh;width:100vw;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+}
+
+/* ── Top header bar ── */
+.topbar{
+  height:52px;
+  background:var(--surface);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;
+  padding:0 20px;gap:16px;
+  flex-shrink:0;
+  z-index:100;
+}
+.topbar-logo{
+  font-family:var(--font-mono);
+  font-size:13px;
+  font-weight:700;
+  letter-spacing:2px;
+  color:var(--critical);
+  display:flex;align-items:center;gap:8px;
+}
+.pulse-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--critical);
+  animation:pulse 1.5s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.4;transform:scale(0.7)}}
+.topbar-sep{width:1px;height:24px;background:var(--border2);}
+.topbar-stat{
+  display:flex;align-items:baseline;gap:5px;
+  font-size:12px;color:var(--muted);
+}
+.topbar-stat strong{
+  font-family:var(--font-mono);
+  font-size:15px;color:var(--text);
+}
+.topbar-stat.danger strong{color:var(--critical);}
+.topbar-stat.warn strong{color:var(--moderate);}
+.topbar-stat.ok strong{color:var(--minor);}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+#connStatus{
+  font-size:11px;font-family:var(--font-mono);
+  padding:4px 12px;border-radius:30px;
+  background:var(--surface2);border:1px solid var(--border2);
+  color:var(--muted);transition:all .3s;
+}
+#connStatus.connected{color:var(--minor);border-color:rgba(16,185,129,0.3);}
+#connStatus.disconnected{color:var(--moderate);border-color:rgba(245,158,11,0.3);}
+.btn-test{
+  background:rgba(245,158,11,0.12);
+  color:var(--moderate);
+  border:1px solid rgba(245,158,11,0.3);
+  padding:5px 14px;border-radius:30px;
+  font-size:11px;font-family:var(--font-mono);
+  cursor:pointer;letter-spacing:0.5px;
+  transition:all .2s;
+}
+.btn-test:hover{background:rgba(245,158,11,0.2);}
+
+/* ── Main body layout ── */
+.main{
+  flex:1;display:flex;overflow:hidden;
+}
+
+/* ── Map ── */
+.map-wrap{flex:3;position:relative;}
+#map{height:100%;width:100%;}
+
+/* dark Leaflet popup */
+.leaflet-popup-content-wrapper{
+  background:var(--surface);
+  color:var(--text);
+  border:1px solid var(--border2);
+  border-radius:var(--radius);
+  box-shadow:0 8px 32px rgba(0,0,0,0.6);
+}
+.leaflet-popup-tip{background:var(--surface);}
+.leaflet-popup-content{font-family:var(--font-ui);font-size:13px;line-height:1.6;}
+
+/* ── Sidebar ── */
+.sidebar{
+  width:320px;flex-shrink:0;
+  background:var(--surface);
+  border-left:1px solid var(--border);
+  display:flex;flex-direction:column;
+  overflow:hidden;
+}
+
+/* Section label */
+.sec-label{
+  font-size:10px;font-family:var(--font-mono);
+  letter-spacing:2px;color:var(--muted);
+  padding:12px 16px 6px;
+  text-transform:uppercase;
+}
+
+/* ── Alert feed ── */
+.alert-scroll{
+  flex:1;overflow-y:auto;
+  padding:0 12px 12px;
+  display:flex;flex-direction:column;gap:8px;
+}
+.alert-scroll::-webkit-scrollbar{width:3px;}
+.alert-scroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+
+.alert-card{
+  background:var(--surface2);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:12px 14px;
+  cursor:pointer;
+  transition:all .15s;
+  position:relative;
+  overflow:hidden;
+}
+.alert-card::before{
+  content:'';
+  position:absolute;left:0;top:0;bottom:0;width:3px;
+}
+.alert-card.critical::before{background:var(--critical);}
+.alert-card.moderate::before{background:var(--moderate);}
+.alert-card.minor::before{background:var(--minor);}
+.alert-card:hover{background:var(--surface3);border-color:var(--border2);}
+.alert-card.selected{
+  background:var(--surface3);
+  border-color:var(--border2);
+  box-shadow:0 0 0 1px rgba(59,127,239,0.3);
+}
+.card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;}
+.card-id{
+  font-family:var(--font-mono);
+  font-size:12px;font-weight:700;
+  color:var(--text);
+}
+.sev-badge{
+  font-family:var(--font-mono);
+  font-size:10px;letter-spacing:1px;
+  padding:2px 8px;border-radius:30px;
+}
+.sev-badge.critical{background:var(--critical-dim);color:var(--critical);}
+.sev-badge.moderate{background:var(--moderate-dim);color:var(--moderate);}
+.sev-badge.minor   {background:var(--minor-dim);   color:var(--minor);}
+.card-coords{
+  font-family:var(--font-mono);font-size:10px;
+  color:var(--muted);margin-bottom:8px;
+}
+.card-footer{
+  display:flex;justify-content:space-between;align-items:center;
+}
+.dispatch-toggle{
+  display:flex;align-items:center;gap:6px;
+  font-size:11px;color:var(--muted);cursor:pointer;
+}
+.dispatch-toggle input{accent-color:var(--minor);cursor:pointer;}
+.dispatch-toggle.dispatched{color:var(--minor);}
+.card-time{
+  font-family:var(--font-mono);
+  font-size:10px;color:var(--muted);
+}
+
+/* ── Detail panel ── */
+.detail-panel{
+  border-top:1px solid var(--border);
+  padding:12px;
+  background:var(--surface);
+}
+.detail-empty{
+  text-align:center;font-size:12px;
+  color:var(--muted);padding:16px 0;
+}
+.detail-title{
+  font-size:11px;font-family:var(--font-mono);
+  letter-spacing:1px;color:var(--muted);
+  margin-bottom:10px;
+}
+.detail-grid{
+  display:grid;grid-template-columns:1fr 1fr;
+  gap:8px;margin-bottom:12px;
+}
+.detail-cell{
+  background:var(--surface2);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:8px 10px;
+}
+.detail-cell-label{font-size:10px;color:var(--muted);margin-bottom:2px;}
+.detail-cell-val{
+  font-family:var(--font-mono);
+  font-size:12px;font-weight:700;
+}
+.detail-cell-val.critical{color:var(--critical);}
+.detail-cell-val.moderate{color:var(--moderate);}
+.detail-cell-val.minor{color:var(--minor);}
+.btn-zoom{
+  width:100%;padding:8px;
+  background:var(--accent);color:white;
+  border:none;border-radius:var(--radius);
+  font-size:12px;font-family:var(--font-mono);
+  cursor:pointer;letter-spacing:0.5px;
+  transition:opacity .2s;
+}
+.btn-zoom:hover{opacity:0.85;}
+
+/* ── Coord box ── */
+.coord-box{
+  border-top:1px solid var(--border);
+  padding:12px;
+}
+.coord-row{display:flex;gap:8px;margin-top:8px;}
+#coordInput{
+  flex:1;background:var(--surface2);
+  border:1px solid var(--border2);
+  border-radius:var(--radius);
+  color:var(--text);padding:7px 12px;
+  font-size:12px;font-family:var(--font-mono);
+  outline:none;
+}
+#coordInput:focus{border-color:var(--accent);}
+.btn-coord{
+  background:var(--surface3);color:var(--text);
+  border:1px solid var(--border2);
+  border-radius:var(--radius);
+  padding:7px 14px;font-size:11px;
+  font-family:var(--font-mono);cursor:pointer;
+  white-space:nowrap;transition:background .2s;
+}
+.btn-coord:hover{background:rgba(59,127,239,0.15);border-color:var(--accent);}
+
+/* ── Toast ── */
+#toast{
+  position:fixed;bottom:20px;left:50%;
+  transform:translateX(-50%) translateY(20px);
+  background:var(--surface3);
+  border:1px solid var(--border2);
+  color:var(--text);
+  padding:8px 18px;border-radius:30px;
+  font-size:12px;font-family:var(--font-mono);
+  z-index:3000;opacity:0;
+  transition:opacity .25s, transform .25s;
+  pointer-events:none;
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* ── Empty state ── */
+.empty-state{
+  text-align:center;color:var(--muted);
+  font-size:12px;padding:24px 12px;
+  line-height:1.8;
+}
+
+/* ── Responsive ── */
+@media(max-width:700px){
+  .main{flex-direction:column;}
+  .map-wrap{flex:none;height:55%;}
+  .sidebar{width:100%;height:45%;flex:none;}
+  .topbar-stat:nth-child(n+4){display:none;}
+}
+</style>
 </head>
 <body>
-<div class="dashboard">
-    <div class="map-wrapper">
-        <div id="map"></div>
+
+<!-- ── Top bar ── -->
+<header class="topbar">
+  <div class="topbar-logo">
+    <span class="pulse-dot"></span>
+    ACCIDENTALERT
+  </div>
+  <div class="topbar-sep"></div>
+  <div class="topbar-stat danger"><strong id="hTotal">0</strong> total</div>
+  <div class="topbar-sep"></div>
+  <div class="topbar-stat warn"><strong id="hActive">0</strong> active</div>
+  <div class="topbar-sep"></div>
+  <div class="topbar-stat ok"><strong id="hResolved">0</strong> resolved</div>
+  <div class="topbar-right">
+    <span id="connStatus">⏳ connecting</span>
+    <button class="btn-test" id="testBtn">+ ADD TEST</button>
+  </div>
+</header>
+
+<!-- ── Main ── -->
+<div class="main">
+  <div class="map-wrap"><div id="map"></div></div>
+
+  <aside class="sidebar">
+    <div class="sec-label">Alert Feed</div>
+
+    <div class="alert-scroll" id="alertList">
+      <div class="empty-state">No alerts yet.<br>Use ADD TEST or send from ESP32.</div>
     </div>
-    <div class="sidebar">
-        <div class="status-bar">
-            <span class="live-badge">🔴 LIVE</span>
-            <span class="connection" id="connectionStatus">⏳ connecting...</span>
-        </div>
 
-        <div class="alert-feed">
-            <h3>🚨 ALERT FEED 
-                <button id="testBtn" style="background:#e67e22; border:none; border-radius:20px; padding:4px 10px; color:white; cursor:pointer;">➕ TEST</button>
-            </h3>
-            <div id="alertList" class="alert-list">Loading alerts...</div>
-        </div>
-
-        <div id="selectedDetail" class="selected-detail">
-            <div style="text-align:center; color:#6c757d;">🗺️ Click an alert to see details</div>
-        </div>
-
-        <div class="coord-box">
-            <div><strong>📍 Locate coordinates</strong></div>
-            <div class="coord-input-group">
-                <input type="text" id="coordInput" placeholder="e.g., 28.6139, 77.2090" value="28.6139, 77.2090">
-                <a href="#" id="showCoordLink" class="coord-link">Show on map</a>
-            </div>
-        </div>
-
-        <div id="totalsPanel" class="totals">Loading totals...</div>
-        <div class="osm-credit">OpenStreetMap contributors | Leaflet.js</div>
+    <!-- Selected detail -->
+    <div class="detail-panel" id="detailPanel">
+      <div class="detail-empty">Click an alert to inspect</div>
     </div>
+
+    <!-- Coordinate locator -->
+    <div class="coord-box">
+      <div class="sec-label" style="padding:0 0 4px;">Locate Coordinates</div>
+      <div class="coord-row">
+        <input type="text" id="coordInput" placeholder="lat, lng — e.g. 28.6139, 77.2090" value="28.6139, 77.2090">
+        <button class="btn-coord" id="showCoordBtn">Fly to</button>
+      </div>
+    </div>
+  </aside>
 </div>
-<div id="toastMsg"></div>
 
+<div id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    // ------------------------------------------------------------
-    //  Firebase configuration - PLACEHOLDERS (replaced by Render)
-    // ------------------------------------------------------------
-    const firebaseConfig = {
-        apiKey: "__FIREBASE_API_KEY__",
-        authDomain: "__FIREBASE_AUTH_DOMAIN__",
-        databaseURL: "__FIREBASE_DATABASE_URL__",
-        projectId: "__FIREBASE_PROJECT_ID__",
-        storageBucket: "__FIREBASE_STORAGE_BUCKET__",
-        messagingSenderId: "__FIREBASE_MESSAGING_SENDER_ID__",
-        appId: "__FIREBASE_APP_ID__"
-    };
+/* ── Firebase config (placeholders — replace with env vars or real values) ── */
+const firebaseConfig = {
+  apiKey:            "__FIREBASE_API_KEY__",
+  authDomain:        "__FIREBASE_AUTH_DOMAIN__",
+  databaseURL:       "__FIREBASE_DATABASE_URL__",
+  projectId:         "__FIREBASE_PROJECT_ID__",
+  storageBucket:     "__FIREBASE_STORAGE_BUCKET__",
+  messagingSenderId: "__FIREBASE_MESSAGING_SENDER_ID__",
+  appId:             "__FIREBASE_APP_ID__"
+};
 
-    // Initialize Firebase
-    firebase.initializeApp(firebaseConfig);
-    const database = firebase.database();
-    const alertsRef = database.ref("alerts");
+/* ── Guard: only init Firebase if config looks real ── */
+const configValid = !firebaseConfig.apiKey.startsWith("__");
+let database, alertsRef;
+if(configValid){
+  firebase.initializeApp(firebaseConfig);
+  database  = firebase.database();
+  alertsRef = database.ref("alerts");
+}
 
-    // ------------------------------------------------------------
-    //  Leaflet Map
-    // ------------------------------------------------------------
-    const map = L.map('map').setView([20.5937, 78.9629], 5);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CartoDB',
-        subdomains: 'abcd',
-        maxZoom: 19
-    }).addTo(map);
+/* ── Toast helper ── */
+function toast(msg, dur=2500){
+  const el=document.getElementById("toast");
+  el.textContent=msg; el.classList.add("show");
+  clearTimeout(el._t);
+  el._t=setTimeout(()=>el.classList.remove("show"), dur);
+}
 
-    const markers = {};      // store marker objects by alert ID
-    let currentSelectedId = null;
-    let allAlerts = new Map(); // id -> data
+/* ── Leaflet map (dark CartoDB tiles) ── */
+const map = L.map('map',{zoomControl:true}).setView([20.5937,78.9629],5);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+  attribution:'&copy; OSM &copy; CartoDB',
+  subdomains:'abcd', maxZoom:19
+}).addTo(map);
 
-    // Helper: get color & CSS class based on severity
-    function getSeverityInfo(impact) {
-        const s = (impact || "").toLowerCase();
-        if (s === "critical") return { color: "#e74c3c", class: "critical", label: "Critical" };
-        if (s === "moderate") return { color: "#f39c12", class: "moderate", label: "Moderate" };
-        return { color: "#2ecc71", class: "minor", label: "Minor" };
-    }
+/* ── State ── */
+const markers     = {};
+const allAlerts   = new Map();
+let selectedId    = null;
 
-    // Add or update marker on map
-    function updateMarker(id, data) {
-        const { lat, lng, impact, resolved, dispatched } = data;
-        if (!lat || !lng) return;
-        const severity = getSeverityInfo(impact);
-        // If resolved/dispatched, change marker to gray
-        const markerColor = (resolved || dispatched) ? "#95a5a6" : severity.color;
-        if (markers[id]) map.removeLayer(markers[id]);
-        const circle = L.circleMarker([lat, lng], {
-            radius: 8,
-            fillColor: markerColor,
-            color: "#fff",
-            weight: 2,
-            opacity: 1,
-            fillOpacity: 0.8
-        }).addTo(map);
-        circle.bindPopup(`
-            <b>${data.id || id}</b><br>
-            Severity: ${severity.label}<br>
-            📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}<br>
-            🆘 Help dispatched: ${(resolved || dispatched) ? "Yes" : "No"}
-        `);
-        circle.on('click', () => selectAlert(id));
-        markers[id] = circle;
-    }
+/* ── Severity helpers ── */
+function sevInfo(impact){
+  const s=(impact||"").toLowerCase();
+  if(s==="critical") return {cls:"critical",label:"CRITICAL",color:"#ef4444"};
+  if(s==="moderate") return {cls:"moderate",label:"MODERATE",color:"#f59e0b"};
+  return {cls:"minor",label:"MINOR",color:"#10b981"};
+}
 
-    // Render alert feed list
-    function renderAlertFeed() {
-        const container = document.getElementById("alertList");
-        if (!container) return;
-        if (allAlerts.size === 0) {
-            container.innerHTML = '<div style="text-align:center; color:#6c757d;">⚠️ No alerts yet.<br>Use TEST button or send from ESP32.</div>';
-            return;
-        }
-        let html = '';
-        let total = 0, active = 0, resolved = 0;
-        for (let [id, alert] of allAlerts.entries()) {
-            total++;
-            const isResolved = alert.resolved || alert.dispatched;
-            if (isResolved) resolved++;
-            else active++;
-            const severity = getSeverityInfo(alert.impact);
-            const selectedClass = (currentSelectedId === id) ? 'selected' : '';
-            html += `
-                <div class="alert-item ${severity.class} ${selectedClass}" data-id="${id}" onclick="selectAlert('${id}')">
-                    <div class="alert-header">
-                        <span>📡 ${alert.id || id.slice(-6)}</span>
-                        <span class="severity-badge severity-${severity.class}">${severity.label}</span>
-                    </div>
-                    <div class="alert-coords">📍 ${alert.lat?.toFixed(5) || '?'}, ${alert.lng?.toFixed(5) || '?'}</div>
-                    <div class="alert-check">
-                        <label>
-                            <input type="checkbox" ${isResolved ? 'checked' : ''} 
-                                   onchange="event.stopPropagation(); markResolved('${id}', this.checked)">
-                            ✅ Help dispatched
-                        </label>
-                        <span class="timestamp">${new Date(alert.timestamp || Date.now()).toLocaleTimeString()}</span>
-                    </div>
-                </div>
-            `;
-        }
-        container.innerHTML = html;
-        document.getElementById("totalsPanel").innerHTML = `
-            📊 Stats: Total: ${total} &nbsp;|&nbsp; 🚨 Active: ${active} &nbsp;|&nbsp; ✅ Resolved: ${resolved}
-        `;
-    }
+/* ── Update / add marker ── */
+function upsertMarker(id, data){
+  const {lat,lng,impact,resolved,dispatched}=data;
+  if(!lat||!lng) return;
+  const sev=sevInfo(impact);
+  const col=(resolved||dispatched)?"#4b5563":sev.color;
+  if(markers[id]) map.removeLayer(markers[id]);
+  const mk=L.circleMarker([lat,lng],{
+    radius:9, fillColor:col, color:"rgba(255,255,255,0.15)",
+    weight:2, fillOpacity:0.9
+  }).addTo(map);
+  mk.bindPopup(`
+    <div style="font-family:'Space Mono',monospace;font-size:12px;line-height:1.8;">
+      <strong>${data.id||id}</strong><br>
+      Severity &nbsp;<span style="color:${sev.color}">${sev.label}</span><br>
+      ${lat.toFixed(5)}, ${lng.toFixed(5)}<br>
+      Help: ${(resolved||dispatched)?"✔ dispatched":"⏳ pending"}
+    </div>
+  `);
+  mk.on('click',()=>selectAlert(id));
+  markers[id]=mk;
+}
 
-    // Update selected details panel
-    function updateSelectedDetails() {
-        const container = document.getElementById("selectedDetail");
-        if (!currentSelectedId || !allAlerts.has(currentSelectedId)) {
-            container.innerHTML = '<div style="text-align:center; color:#6c757d;">🗺️ Click an alert to see details</div>';
-            return;
-        }
-        const alert = allAlerts.get(currentSelectedId);
-        const severity = getSeverityInfo(alert.impact);
-        const isResolved = alert.resolved || alert.dispatched;
-        container.innerHTML = `
-            <h4>⚠️ SELECTED — ${alert.id || currentSelectedId.slice(-6)}</h4>
-            <div class="detail-grid">
-                <div><strong>Impact:</strong> ${severity.label}</div>
-                <div><strong>Status:</strong> ${isResolved ? "Help dispatched" : "Pending"}</div>
-                <div><strong>Latitude:</strong> ${alert.lat?.toFixed(6)}</div>
-                <div><strong>Longitude:</strong> ${alert.lng?.toFixed(6)}</div>
-                <div><strong>Device:</strong> ${alert.device || "ESP32-SIM7600"}</div>
-                <div><strong>Reported:</strong> ${new Date(alert.timestamp || Date.now()).toLocaleString()}</div>
-            </div>
-            <button class="btn-focus" onclick="focusOnSelected()">📍 Zoom to accident</button>
-        `;
-    }
+/* ── Render feed ── */
+function renderFeed(){
+  const list=document.getElementById("alertList");
+  if(allAlerts.size===0){
+    list.innerHTML='<div class="empty-state">No alerts yet.<br>Use ADD TEST or send from ESP32.</div>';
+    updateTotals(0,0,0); return;
+  }
+  let total=0,active=0,resolved=0, html="";
+  for(const [id,a] of allAlerts.entries()){
+    total++;
+    const isR=a.resolved||a.dispatched;
+    isR ? resolved++ : active++;
+    const sev=sevInfo(a.impact);
+    const sel=selectedId===id?"selected":"";
+    html+=`
+    <div class="alert-card ${sev.cls} ${sel}" data-id="${id}" onclick="selectAlert('${id}')">
+      <div class="card-top">
+        <span class="card-id">${a.id||id.slice(-6).toUpperCase()}</span>
+        <span class="sev-badge ${sev.cls}">${sev.label}</span>
+      </div>
+      <div class="card-coords">${a.lat?.toFixed(5)||'?'} / ${a.lng?.toFixed(5)||'?'}</div>
+      <div class="card-footer">
+        <label class="dispatch-toggle ${isR?'dispatched':''}" onclick="event.stopPropagation()">
+          <input type="checkbox" ${isR?'checked':''} onchange="markResolved('${id}',this.checked)">
+          ${isR?"Help dispatched":"Mark dispatched"}
+        </label>
+        <span class="card-time">${new Date(a.timestamp||Date.now()).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
+      </div>
+    </div>`;
+  }
+  list.innerHTML=html;
+  updateTotals(total,active,resolved);
+}
 
-    // Mark resolved / help dispatched
-    window.markResolved = async function(id, checked) {
-        try {
-            await alertsRef.child(id).update({ resolved: checked, dispatched: checked });
-            const toast = document.getElementById("toastMsg");
-            toast.innerText = checked ? "✅ Help marked as dispatched" : "⏳ Help status updated";
-            setTimeout(() => toast.innerText = "", 2000);
-        } catch(e) {
-            console.error(e);
-            alert("Failed to update. Check Firebase rules.");
-        }
-    };
+/* ── Topbar counters ── */
+function updateTotals(t,a,r){
+  document.getElementById("hTotal").textContent=t;
+  document.getElementById("hActive").textContent=a;
+  document.getElementById("hResolved").textContent=r;
+}
 
-    // Select alert (from list or marker click)
-    window.selectAlert = function(id) {
-        currentSelectedId = id;
-        renderAlertFeed();
-        updateSelectedDetails();
-        const alert = allAlerts.get(id);
-        if (alert && alert.lat && alert.lng) {
-            map.flyTo([alert.lat, alert.lng], 15, { duration: 1 });
-        }
-    };
+/* ── Detail panel ── */
+function renderDetail(){
+  const panel=document.getElementById("detailPanel");
+  if(!selectedId||!allAlerts.has(selectedId)){
+    panel.innerHTML='<div class="detail-empty">Click an alert to inspect</div>';
+    return;
+  }
+  const a=allAlerts.get(selectedId);
+  const sev=sevInfo(a.impact);
+  const isR=a.resolved||a.dispatched;
+  panel.innerHTML=`
+    <div class="detail-title">SELECTED — ${a.id||selectedId.slice(-6).toUpperCase()}</div>
+    <div class="detail-grid">
+      <div class="detail-cell">
+        <div class="detail-cell-label">Impact</div>
+        <div class="detail-cell-val ${sev.cls}">${sev.label}</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-cell-label">Status</div>
+        <div class="detail-cell-val" style="color:${isR?'var(--minor)':'var(--moderate)'}">${isR?"DISPATCHED":"PENDING"}</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-cell-label">Latitude</div>
+        <div class="detail-cell-val">${a.lat?.toFixed(6)}</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-cell-label">Longitude</div>
+        <div class="detail-cell-val">${a.lng?.toFixed(6)}</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-cell-label">Device</div>
+        <div class="detail-cell-val" style="font-size:10px">${a.device||"ESP32-SIM7600"}</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-cell-label">G-Force</div>
+        <div class="detail-cell-val">${a.gForce||"—"} G</div>
+      </div>
+    </div>
+    <button class="btn-zoom" onclick="focusSelected()">ZOOM TO ACCIDENT</button>
+  `;
+}
 
-    window.focusOnSelected = function() {
-        if (currentSelectedId && allAlerts.has(currentSelectedId)) {
-            const alert = allAlerts.get(currentSelectedId);
-            map.flyTo([alert.lat, alert.lng], 16);
-        }
-    };
+/* ── Select alert ── */
+window.selectAlert=function(id){
+  selectedId=id;
+  renderFeed(); renderDetail();
+  const a=allAlerts.get(id);
+  if(a?.lat&&a?.lng) map.flyTo([a.lat,a.lng],15,{duration:0.8});
+};
+window.focusSelected=function(){
+  if(selectedId&&allAlerts.has(selectedId)){
+    const a=allAlerts.get(selectedId);
+    map.flyTo([a.lat,a.lng],16);
+  }
+};
 
-    // Show custom coordinates on map
-    window.showCoordinates = function() {
-        const input = document.getElementById("coordInput").value.trim();
-        let parts = input.split(',');
-        if (parts.length !== 2) {
-            alert("Use format: latitude, longitude (e.g., 28.6139, 77.2090)");
-            return;
-        }
-        let lat = parseFloat(parts[0]), lng = parseFloat(parts[1]);
-        if (isNaN(lat) || isNaN(lng)) {
-            alert("Invalid numbers");
-            return;
-        }
-        // Add a temporary marker
-        const tempMarker = L.circleMarker([lat, lng], {
-            radius: 10,
-            color: "#e67e22",
-            weight: 3,
-            fillColor: "#f39c12",
-            fillOpacity: 0.6
-        }).addTo(map).bindPopup(`📍 Manual: ${lat}, ${lng}`).openPopup();
-        map.flyTo([lat, lng], 14);
-        setTimeout(() => map.removeLayer(tempMarker), 5000);
-    };
+/* ── Mark resolved ── */
+window.markResolved=async function(id,checked){
+  if(!configValid){
+    /* demo mode: just update in-memory */
+    const a=allAlerts.get(id)||{};
+    a.resolved=checked; a.dispatched=checked;
+    allAlerts.set(id,a);
+    upsertMarker(id,a); renderFeed(); renderDetail();
+    toast(checked?"✔ Help dispatched (demo)":"⏳ Updated (demo)");
+    return;
+  }
+  try{
+    await alertsRef.child(id).update({resolved:checked,dispatched:checked});
+    toast(checked?"✔ Help marked as dispatched":"⏳ Status updated");
+  }catch(e){
+    console.error(e);
+    toast("Firebase write failed: "+e.message, 4000);
+  }
+};
 
-    // Test: add a random accident
-    window.addTestAccident = async function() {
-        const lat = 19.0760 + (Math.random() - 0.5) * 8;
-        const lng = 72.8777 + (Math.random() - 0.5) * 10;
-        const impacts = ["critical", "moderate", "minor"];
-        const randomImpact = impacts[Math.floor(Math.random() * impacts.length)];
-        const newId = alertsRef.push().key;
-        const accidentData = {
-            id: `TEST-${Math.floor(Math.random() * 9000) + 1000}`,
-            lat: lat,
-            lng: lng,
-            impact: randomImpact,
-            resolved: false,
-            dispatched: false,
-            timestamp: Date.now(),
-            device: "ESP32-SIM7600 (WiFi)",
-            gForce: (Math.random() * 3 + 1).toFixed(1)
-        };
-        try {
-            await alertsRef.child(newId).set(accidentData);
-            const toast = document.getElementById("toastMsg");
-            toast.innerText = `✅ Test accident (${randomImpact}) added`;
-            setTimeout(() => toast.innerText = "", 2500);
-        } catch(e) {
-            alert("Firebase write failed: " + e.message);
-        }
-    };
+/* ── Add test accident ── */
+window.addTestAccident=async function(){
+  const lat=19.076+(Math.random()-0.5)*8;
+  const lng=72.877+(Math.random()-0.5)*10;
+  const impacts=["critical","moderate","minor"];
+  const impact=impacts[Math.floor(Math.random()*impacts.length)];
+  const newKey=configValid ? alertsRef.push().key : `demo_${Date.now()}`;
+  const data={
+    id:`T-${Math.floor(Math.random()*9000)+1000}`,
+    lat,lng,impact,
+    resolved:false,dispatched:false,
+    timestamp:Date.now(),
+    device:"ESP32-SIM7600",
+    gForce:(Math.random()*4+0.5).toFixed(1)
+  };
+  if(!configValid){
+    /* demo mode */
+    allAlerts.set(newKey,data);
+    upsertMarker(newKey,data);
+    renderFeed(); renderDetail();
+    toast(`✔ Demo alert (${impact.toUpperCase()}) added`);
+    return;
+  }
+  try{
+    await alertsRef.child(newKey).set(data);
+    toast(`✔ Test alert (${impact.toUpperCase()}) pushed to Firebase`);
+  }catch(e){
+    alert("Firebase write failed: "+e.message);
+  }
+};
 
-    // Real-time listener
-    function startListener() {
-        alertsRef.on('child_added', (snapshot) => {
-            const data = snapshot.val();
-            const id = snapshot.key;
-            data.id = data.id || id.slice(-6).toUpperCase();
-            allAlerts.set(id, data);
-            updateMarker(id, data);
-            renderAlertFeed();
-            updateSelectedDetails();
-            document.getElementById("connectionStatus").innerHTML = "✅ Firebase connected";
-            document.getElementById("connectionStatus").style.color = "#27ae60";
-        });
-        alertsRef.on('child_changed', (snapshot) => {
-            const data = snapshot.val();
-            const id = snapshot.key;
-            const existing = allAlerts.get(id) || {};
-            const merged = { ...existing, ...data };
-            allAlerts.set(id, merged);
-            updateMarker(id, merged);
-            renderAlertFeed();
-            updateSelectedDetails();
-        });
-        // Connection status check
-        database.ref('.info/connected').on('value', (snap) => {
-            if (snap.val()) {
-                document.getElementById("connectionStatus").innerHTML = "✅ Firebase connected";
-                document.getElementById("connectionStatus").style.color = "#27ae60";
-            } else {
-                document.getElementById("connectionStatus").innerHTML = "⚠️ Disconnected";
-                document.getElementById("connectionStatus").style.color = "#e67e22";
-            }
-        });
-    }
+/* ── Fly to manual coordinates ── */
+function flyToCoords(){
+  const val=document.getElementById("coordInput").value.trim();
+  const parts=val.split(",");
+  if(parts.length!==2){ toast("Format: lat, lng"); return; }
+  const lat=parseFloat(parts[0]), lng=parseFloat(parts[1]);
+  if(isNaN(lat)||isNaN(lng)){ toast("Invalid numbers"); return; }
+  const tmp=L.circleMarker([lat,lng],{
+    radius:11,color:"#f59e0b",weight:3,
+    fillColor:"rgba(245,158,11,0.3)",fillOpacity:1
+  }).addTo(map).bindPopup(`📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}`).openPopup();
+  map.flyTo([lat,lng],14,{duration:0.8});
+  setTimeout(()=>map.removeLayer(tmp),6000);
+}
 
-    // Initialize
-    document.addEventListener("DOMContentLoaded", () => {
-        startListener();
-        document.getElementById("testBtn").addEventListener("click", addTestAccident);
-        document.getElementById("showCoordLink").addEventListener("click", (e) => {
-            e.preventDefault();
-            showCoordinates();
-        });
-    });
+/* ── Firebase real-time listener ── */
+function startListener(){
+  if(!configValid){
+    setConnStatus("demo"); return;
+  }
+  alertsRef.on('child_added', snap=>{
+    const d=snap.val(), id=snap.key;
+    d.id=d.id||id.slice(-6).toUpperCase();
+    allAlerts.set(id,d);
+    upsertMarker(id,d);
+    renderFeed(); renderDetail();
+    setConnStatus("connected");
+  });
+  alertsRef.on('child_changed', snap=>{
+    const d=snap.val(), id=snap.key;
+    const merged={...(allAlerts.get(id)||{}),...d};
+    allAlerts.set(id,merged);
+    upsertMarker(id,merged);
+    renderFeed(); renderDetail();
+  });
+  database.ref('.info/connected').on('value', snap=>{
+    setConnStatus(snap.val()?"connected":"disconnected");
+  });
+}
+
+function setConnStatus(state){
+  const el=document.getElementById("connStatus");
+  el.className="";
+  if(state==="connected"){
+    el.className="connected"; el.textContent="● FIREBASE LIVE";
+  } else if(state==="disconnected"){
+    el.className="disconnected"; el.textContent="⚠ DISCONNECTED";
+  } else {
+    el.textContent="◆ DEMO MODE";
+  }
+}
+
+/* ── Boot ── */
+document.addEventListener("DOMContentLoaded",()=>{
+  startListener();
+  document.getElementById("testBtn").addEventListener("click", addTestAccident);
+  document.getElementById("showCoordBtn").addEventListener("click", flyToCoords);
+  document.getElementById("coordInput").addEventListener("keydown", e=>{
+    if(e.key==="Enter") flyToCoords();
+  });
+});
 </script>
 </body>
 </html>
