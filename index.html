@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AccidentAlert Dashboard | Live Map</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Firebase SDKs (Compat version for Realtime DB) -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+        }
+        body {
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+        }
+        .dashboard {
+            display: flex;
+            height: 100%;
+            width: 100%;
+        }
+        /* Map takes 75% */
+        .map-wrapper {
+            flex: 3;
+            position: relative;
+            background: #e9ecef;
+        }
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+        /* Sidebar 25% */
+        .sidebar {
+            flex: 1;
+            background: #f8f9fa;
+            display: flex;
+            flex-direction: column;
+            border-left: 2px solid #dee2e6;
+            overflow-y: auto;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.05);
+        }
+        /* Header status */
+        .status-bar {
+            padding: 15px;
+            background: white;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .live-badge {
+            background: #e74c3c;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-size: 0.7rem;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+        .connection {
+            font-size: 0.75rem;
+            color: #2c3e50;
+            background: #e9ecef;
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+        /* Alert feed */
+        .alert-feed {
+            padding: 15px;
+            border-bottom: 1px solid #e9ecef;
+            flex: 1;
+            overflow-y: auto;
+        }
+        .alert-feed h3 {
+            font-size: 1rem;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .alert-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .alert-item {
+            background: white;
+            border-radius: 12px;
+            padding: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border-left: 5px solid;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .alert-item.critical { border-left-color: #e74c3c; }
+        .alert-item.moderate { border-left-color: #f39c12; }
+        .alert-item.minor   { border-left-color: #2ecc71; }
+        .alert-item.selected {
+            background: #e3f2fd;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .alert-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+        .severity-badge {
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 20px;
+            color: white;
+        }
+        .severity-critical { background: #e74c3c; }
+        .severity-moderate { background: #f39c12; }
+        .severity-minor    { background: #2ecc71; }
+        .alert-coords {
+            font-family: monospace;
+            font-size: 0.75rem;
+            color: #6c757d;
+            margin: 5px 0;
+        }
+        .alert-check {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.75rem;
+            margin-top: 8px;
+        }
+        .timestamp {
+            font-size: 0.65rem;
+            color: #adb5bd;
+        }
+        /* Selected details panel */
+        .selected-detail {
+            background: white;
+            margin: 10px 15px;
+            padding: 12px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .selected-detail h4 {
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            font-size: 0.75rem;
+            margin: 10px 0;
+        }
+        .btn-focus {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.7rem;
+            width: 100%;
+        }
+        /* GPS coordinate box */
+        .coord-box {
+            background: white;
+            margin: 10px 15px;
+            padding: 12px;
+            border-radius: 12px;
+            border-top: 1px solid #e9ecef;
+        }
+        .coord-input-group {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        #coordInput {
+            flex: 2;
+            padding: 8px;
+            border: 1px solid #ced4da;
+            border-radius: 30px;
+            font-size: 0.75rem;
+        }
+        .coord-link {
+            background: #6c757d;
+            color: white;
+            padding: 6px 14px;
+            border-radius: 30px;
+            text-decoration: none;
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+        .test-btn {
+            background: #28a745;
+            color: white;
+            text-align: center;
+            padding: 8px;
+            border-radius: 30px;
+            margin-top: 10px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+        .totals {
+            background: #e9ecef;
+            border-radius: 12px;
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            margin: 10px 15px;
+        }
+        .osm-credit {
+            font-size: 0.6rem;
+            text-align: center;
+            color: #6c757d;
+            margin: 10px;
+        }
+        #toastMsg {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: #2c3e50;
+            color: white;
+            padding: 6px 14px;
+            border-radius: 30px;
+            font-size: 0.8rem;
+            z-index: 2000;
+            opacity: 0.9;
+        }
+        @media (max-width: 700px) {
+            .dashboard { flex-direction: column; }
+            .map-wrapper { flex: auto; height: 55%; }
+            .sidebar { flex: auto; height: 45%; }
+        }
+    </style>
+</head>
+<body>
+<div class="dashboard">
+    <div class="map-wrapper">
+        <div id="map"></div>
+    </div>
+    <div class="sidebar">
+        <div class="status-bar">
+            <span class="live-badge">🔴 LIVE</span>
+            <span class="connection" id="connectionStatus">⏳ connecting...</span>
+        </div>
+
+        <div class="alert-feed">
+            <h3>🚨 ALERT FEED 
+                <button id="testBtn" style="background:#e67e22; border:none; border-radius:20px; padding:4px 10px; color:white; cursor:pointer;">➕ TEST</button>
+            </h3>
+            <div id="alertList" class="alert-list">Loading alerts...</div>
+        </div>
+
+        <div id="selectedDetail" class="selected-detail">
+            <div style="text-align:center; color:#6c757d;">🗺️ Click an alert to see details</div>
+        </div>
+
+        <div class="coord-box">
+            <div><strong>📍 Locate coordinates</strong></div>
+            <div class="coord-input-group">
+                <input type="text" id="coordInput" placeholder="e.g., 28.6139, 77.2090" value="28.6139, 77.2090">
+                <a href="#" id="showCoordLink" class="coord-link">Show on map</a>
+            </div>
+        </div>
+
+        <div id="totalsPanel" class="totals">Loading totals...</div>
+        <div class="osm-credit">OpenStreetMap contributors | Leaflet.js</div>
+    </div>
+</div>
+<div id="toastMsg"></div>
+
+<script>
+    // ------------------------------------------------------------
+    //  Firebase configuration - PLACEHOLDERS (replaced by Render)
+    // ------------------------------------------------------------
+    const firebaseConfig = {
+        apiKey: "__FIREBASE_API_KEY__",
+        authDomain: "__FIREBASE_AUTH_DOMAIN__",
+        databaseURL: "__FIREBASE_DATABASE_URL__",
+        projectId: "__FIREBASE_PROJECT_ID__",
+        storageBucket: "__FIREBASE_STORAGE_BUCKET__",
+        messagingSenderId: "__FIREBASE_MESSAGING_SENDER_ID__",
+        appId: "__FIREBASE_APP_ID__"
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+    const alertsRef = database.ref("alerts");
+
+    // ------------------------------------------------------------
+    //  Leaflet Map
+    // ------------------------------------------------------------
+    const map = L.map('map').setView([20.5937, 78.9629], 5);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CartoDB',
+        subdomains: 'abcd',
+        maxZoom: 19
+    }).addTo(map);
+
+    const markers = {};      // store marker objects by alert ID
+    let currentSelectedId = null;
+    let allAlerts = new Map(); // id -> data
+
+    // Helper: get color & CSS class based on severity
+    function getSeverityInfo(impact) {
+        const s = (impact || "").toLowerCase();
+        if (s === "critical") return { color: "#e74c3c", class: "critical", label: "Critical" };
+        if (s === "moderate") return { color: "#f39c12", class: "moderate", label: "Moderate" };
+        return { color: "#2ecc71", class: "minor", label: "Minor" };
+    }
+
+    // Add or update marker on map
+    function updateMarker(id, data) {
+        const { lat, lng, impact, resolved, dispatched } = data;
+        if (!lat || !lng) return;
+        const severity = getSeverityInfo(impact);
+        // If resolved/dispatched, change marker to gray
+        const markerColor = (resolved || dispatched) ? "#95a5a6" : severity.color;
+        if (markers[id]) map.removeLayer(markers[id]);
+        const circle = L.circleMarker([lat, lng], {
+            radius: 8,
+            fillColor: markerColor,
+            color: "#fff",
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.8
+        }).addTo(map);
+        circle.bindPopup(`
+            <b>${data.id || id}</b><br>
+            Severity: ${severity.label}<br>
+            📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}<br>
+            🆘 Help dispatched: ${(resolved || dispatched) ? "Yes" : "No"}
+        `);
+        circle.on('click', () => selectAlert(id));
+        markers[id] = circle;
+    }
+
+    // Render alert feed list
+    function renderAlertFeed() {
+        const container = document.getElementById("alertList");
+        if (!container) return;
+        if (allAlerts.size === 0) {
+            container.innerHTML = '<div style="text-align:center; color:#6c757d;">⚠️ No alerts yet.<br>Use TEST button or send from ESP32.</div>';
+            return;
+        }
+        let html = '';
+        let total = 0, active = 0, resolved = 0;
+        for (let [id, alert] of allAlerts.entries()) {
+            total++;
+            const isResolved = alert.resolved || alert.dispatched;
+            if (isResolved) resolved++;
+            else active++;
+            const severity = getSeverityInfo(alert.impact);
+            const selectedClass = (currentSelectedId === id) ? 'selected' : '';
+            html += `
+                <div class="alert-item ${severity.class} ${selectedClass}" data-id="${id}" onclick="selectAlert('${id}')">
+                    <div class="alert-header">
+                        <span>📡 ${alert.id || id.slice(-6)}</span>
+                        <span class="severity-badge severity-${severity.class}">${severity.label}</span>
+                    </div>
+                    <div class="alert-coords">📍 ${alert.lat?.toFixed(5) || '?'}, ${alert.lng?.toFixed(5) || '?'}</div>
+                    <div class="alert-check">
+                        <label>
+                            <input type="checkbox" ${isResolved ? 'checked' : ''} 
+                                   onchange="event.stopPropagation(); markResolved('${id}', this.checked)">
+                            ✅ Help dispatched
+                        </label>
+                        <span class="timestamp">${new Date(alert.timestamp || Date.now()).toLocaleTimeString()}</span>
+                    </div>
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+        document.getElementById("totalsPanel").innerHTML = `
+            📊 Stats: Total: ${total} &nbsp;|&nbsp; 🚨 Active: ${active} &nbsp;|&nbsp; ✅ Resolved: ${resolved}
+        `;
+    }
+
+    // Update selected details panel
+    function updateSelectedDetails() {
+        const container = document.getElementById("selectedDetail");
+        if (!currentSelectedId || !allAlerts.has(currentSelectedId)) {
+            container.innerHTML = '<div style="text-align:center; color:#6c757d;">🗺️ Click an alert to see details</div>';
+            return;
+        }
+        const alert = allAlerts.get(currentSelectedId);
+        const severity = getSeverityInfo(alert.impact);
+        const isResolved = alert.resolved || alert.dispatched;
+        container.innerHTML = `
+            <h4>⚠️ SELECTED — ${alert.id || currentSelectedId.slice(-6)}</h4>
+            <div class="detail-grid">
+                <div><strong>Impact:</strong> ${severity.label}</div>
+                <div><strong>Status:</strong> ${isResolved ? "Help dispatched" : "Pending"}</div>
+                <div><strong>Latitude:</strong> ${alert.lat?.toFixed(6)}</div>
+                <div><strong>Longitude:</strong> ${alert.lng?.toFixed(6)}</div>
+                <div><strong>Device:</strong> ${alert.device || "ESP32-SIM7600"}</div>
+                <div><strong>Reported:</strong> ${new Date(alert.timestamp || Date.now()).toLocaleString()}</div>
+            </div>
+            <button class="btn-focus" onclick="focusOnSelected()">📍 Zoom to accident</button>
+        `;
+    }
+
+    // Mark resolved / help dispatched
+    window.markResolved = async function(id, checked) {
+        try {
+            await alertsRef.child(id).update({ resolved: checked, dispatched: checked });
+            const toast = document.getElementById("toastMsg");
+            toast.innerText = checked ? "✅ Help marked as dispatched" : "⏳ Help status updated";
+            setTimeout(() => toast.innerText = "", 2000);
+        } catch(e) {
+            console.error(e);
+            alert("Failed to update. Check Firebase rules.");
+        }
+    };
+
+    // Select alert (from list or marker click)
+    window.selectAlert = function(id) {
+        currentSelectedId = id;
+        renderAlertFeed();
+        updateSelectedDetails();
+        const alert = allAlerts.get(id);
+        if (alert && alert.lat && alert.lng) {
+            map.flyTo([alert.lat, alert.lng], 15, { duration: 1 });
+        }
+    };
+
+    window.focusOnSelected = function() {
+        if (currentSelectedId && allAlerts.has(currentSelectedId)) {
+            const alert = allAlerts.get(currentSelectedId);
+            map.flyTo([alert.lat, alert.lng], 16);
+        }
+    };
+
+    // Show custom coordinates on map
+    window.showCoordinates = function() {
+        const input = document.getElementById("coordInput").value.trim();
+        let parts = input.split(',');
+        if (parts.length !== 2) {
+            alert("Use format: latitude, longitude (e.g., 28.6139, 77.2090)");
+            return;
+        }
+        let lat = parseFloat(parts[0]), lng = parseFloat(parts[1]);
+        if (isNaN(lat) || isNaN(lng)) {
+            alert("Invalid numbers");
+            return;
+        }
+        // Add a temporary marker
+        const tempMarker = L.circleMarker([lat, lng], {
+            radius: 10,
+            color: "#e67e22",
+            weight: 3,
+            fillColor: "#f39c12",
+            fillOpacity: 0.6
+        }).addTo(map).bindPopup(`📍 Manual: ${lat}, ${lng}`).openPopup();
+        map.flyTo([lat, lng], 14);
+        setTimeout(() => map.removeLayer(tempMarker), 5000);
+    };
+
+    // Test: add a random accident
+    window.addTestAccident = async function() {
+        const lat = 19.0760 + (Math.random() - 0.5) * 8;
+        const lng = 72.8777 + (Math.random() - 0.5) * 10;
+        const impacts = ["critical", "moderate", "minor"];
+        const randomImpact = impacts[Math.floor(Math.random() * impacts.length)];
+        const newId = alertsRef.push().key;
+        const accidentData = {
+            id: `TEST-${Math.floor(Math.random() * 9000) + 1000}`,
+            lat: lat,
+            lng: lng,
+            impact: randomImpact,
+            resolved: false,
+            dispatched: false,
+            timestamp: Date.now(),
+            device: "ESP32-SIM7600 (WiFi)",
+            gForce: (Math.random() * 3 + 1).toFixed(1)
+        };
+        try {
+            await alertsRef.child(newId).set(accidentData);
+            const toast = document.getElementById("toastMsg");
+            toast.innerText = `✅ Test accident (${randomImpact}) added`;
+            setTimeout(() => toast.innerText = "", 2500);
+        } catch(e) {
+            alert("Firebase write failed: " + e.message);
+        }
+    };
+
+    // Real-time listener
+    function startListener() {
+        alertsRef.on('child_added', (snapshot) => {
+            const data = snapshot.val();
+            const id = snapshot.key;
+            data.id = data.id || id.slice(-6).toUpperCase();
+            allAlerts.set(id, data);
+            updateMarker(id, data);
+            renderAlertFeed();
+            updateSelectedDetails();
+            document.getElementById("connectionStatus").innerHTML = "✅ Firebase connected";
+            document.getElementById("connectionStatus").style.color = "#27ae60";
+        });
+        alertsRef.on('child_changed', (snapshot) => {
+            const data = snapshot.val();
+            const id = snapshot.key;
+            const existing = allAlerts.get(id) || {};
+            const merged = { ...existing, ...data };
+            allAlerts.set(id, merged);
+            updateMarker(id, merged);
+            renderAlertFeed();
+            updateSelectedDetails();
+        });
+        // Connection status check
+        database.ref('.info/connected').on('value', (snap) => {
+            if (snap.val()) {
+                document.getElementById("connectionStatus").innerHTML = "✅ Firebase connected";
+                document.getElementById("connectionStatus").style.color = "#27ae60";
+            } else {
+                document.getElementById("connectionStatus").innerHTML = "⚠️ Disconnected";
+                document.getElementById("connectionStatus").style.color = "#e67e22";
+            }
+        });
+    }
+
+    // Initialize
+    document.addEventListener("DOMContentLoaded", () => {
+        startListener();
+        document.getElementById("testBtn").addEventListener("click", addTestAccident);
+        document.getElementById("showCoordLink").addEventListener("click", (e) => {
+            e.preventDefault();
+            showCoordinates();
+        });
+    });
+</script>
+</body>
+</html>
